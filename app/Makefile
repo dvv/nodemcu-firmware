@@ -26,7 +26,6 @@ SUBDIRS=    \
 	driver	\
 	lwip	\
 	json	\
-	ssl	\
 	upgrade	\
 	platform	\
 	libc 	\
@@ -36,6 +35,8 @@ SUBDIRS=    \
 	wofs 	\
 	modules	\
 	spiffs
+
+#	ssl	\
 
 endif # } PDIR
 
@@ -73,7 +74,6 @@ COMPONENTS_eagle.app.v6 = \
 	driver/libdriver.a	\
 	lwip/liblwip.a	\
 	json/libjson.a	\
-	ssl/libssl.a	\
 	upgrade/libupgrade.a	\
 	platform/libplatform.a	\
 	libc/liblibc.a 	\
@@ -83,6 +83,8 @@ COMPONENTS_eagle.app.v6 = \
 	wofs/wofs.a 	\
 	spiffs/spiffs.a 	\
 	modules/libmodules.a
+
+#	ssl/libssl.a	\
 
 LINKFLAGS_eagle.app.v6 = \
 	-L../lib        \

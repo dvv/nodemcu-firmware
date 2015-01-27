@@ -74,7 +74,9 @@ typedef struct lmqtt_userdata
   mqtt_connect_info_t connect_info;
   uint32_t keep_alive_tick;
   uint32_t send_timeout;
+#ifdef CLIENT_SSL_ENABLE
   uint8_t secure;
+#endif
   uint8_t connected;
   ETSTimer mqttTimer;
   tConnState connState;
@@ -174,12 +176,16 @@ READPACKET:
       if(mqtt_get_type(mud->mqtt_state.in_buffer) != MQTT_MSG_TYPE_CONNACK){
         NODE_DBG("MQTT: Invalid packet\r\n");
         mud->connState = MQTT_INIT;
+#ifdef CLIENT_SSL_ENABLE
         if(mud->secure){
           espconn_secure_disconnect(pesp_conn);
         }
         else {
+#endif
           espconn_disconnect(pesp_conn);
+#ifdef CLIENT_SSL_ENABLE
         }
+#endif
       } else {
         mud->connState = MQTT_DATA;
         NODE_DBG("MQTT: Connected\r\n");
@@ -292,9 +298,11 @@ READPACKET:
   }
 
   if(mud->mqtt_state.outbound_message != NULL){
+#ifdef CLIENT_SSL_ENABLE
     if(mud->secure)
       espconn_secure_sent(pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
     else
+#endif
       espconn_sent(pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
     mud->mqtt_state.outbound_message = NULL;
   }
@@ -344,13 +352,17 @@ static void mqtt_socket_connected(void *arg)
   mqtt_msg_init(&mud->mqtt_state.mqtt_connection, mud->mqtt_state.out_buffer, mud->mqtt_state.out_buffer_length);
   mud->mqtt_state.outbound_message = mqtt_msg_connect(&mud->mqtt_state.mqtt_connection, mud->mqtt_state.connect_info);
   NODE_DBG("Send MQTT connection infomation, data len: %d, d[0]=%d \r\n", mud->mqtt_state.outbound_message->length,  mud->mqtt_state.outbound_message->data[0]);
+#ifdef CLIENT_SSL_ENABLE
   if(mud->secure){
     espconn_secure_sent(pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
   }
   else
   {
+#endif
     espconn_sent(pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
+#ifdef CLIENT_SSL_ENABLE
   }
+#endif
   mud->mqtt_state.outbound_message = NULL;
   mud->connState = MQTT_CONNECT_SENDING;
   return;
@@ -368,9 +380,11 @@ void mqtt_socket_timer(void *arg)
       NODE_DBG("\r\nMQTT: Send keepalive packet\r\n");
       mud->mqtt_state.outbound_message = mqtt_msg_pingreq(&mud->mqtt_state.mqtt_connection);
 
+#ifdef CLIENT_SSL_ENABLE
       if(mud->secure)
         espconn_secure_sent(mud->pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
       else
+#endif
         espconn_sent(mud->pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
       mud->keep_alive_tick = 0;
     }
@@ -392,7 +406,9 @@ static int mqtt_socket_client( lua_State* L )
   size_t il = c_strlen(tempid);
   const char *clientId = tempid, *username = NULL, *password = NULL;
   int stack = 1;
+#ifdef CLIENT_SSL_ENABLE
   unsigned secure = 0;
+#endif
   int top = lua_gettop(L);
 
   // create a object
@@ -406,7 +422,9 @@ static int mqtt_socket_client( lua_State* L )
   mud->cb_suback_ref = LUA_NOREF;
   mud->cb_puback_ref = LUA_NOREF;
   mud->pesp_conn = NULL;
+#ifdef CLIENT_SSL_ENABLE
   mud->secure = 0;
+#endif
 
   mud->keep_alive_tick = 0;
   mud->send_timeout = 0;
@@ -457,7 +475,7 @@ static int mqtt_socket_client( lua_State* L )
   gL = L;   // global L for mqtt module.
 
   if(lua_isnumber( L, stack ))
-  {   
+  {
     mud->connect_info.keepalive = luaL_checkinteger( L, stack);
     stack++;
   }
@@ -480,7 +498,7 @@ static int mqtt_socket_client( lua_State* L )
 
   c_memcpy(mud->connect_info.username, username, il);
   mud->connect_info.username[il] = 0;
-    
+
   if(lua_isstring( L, stack )){
     password = luaL_checklstring( L, stack, &il );
     stack++;
@@ -494,7 +512,7 @@ static int mqtt_socket_client( lua_State* L )
 
   c_memcpy(mud->connect_info.password, password, il);
   mud->connect_info.password[il] = 0;
-  
+
   NODE_DBG("MQTT: Init info: %s, %s, %s\r\n", mud->connect_info.client_id, mud->connect_info.username, mud->connect_info.password);
 
   return 1;
@@ -571,7 +589,7 @@ static int mqtt_delete( lua_State* L )
     mud->self_ref = LUA_NOREF;
   }
   lua_gc(gL, LUA_GCRESTART, 0);
-  return 0;  
+  return 0;
 }
 
 static void socket_connect(struct espconn *pesp_conn)
@@ -582,14 +600,18 @@ static void socket_connect(struct espconn *pesp_conn)
   if(mud == NULL)
     return;
 
+#ifdef CLIENT_SSL_ENABLE
   if(mud->secure){
     espconn_secure_connect(pesp_conn);
   }
   else
   {
+#endif
     espconn_connect(pesp_conn);
+#ifdef CLIENT_SSL_ENABLE
   }
-  
+#endif
+
   NODE_DBG("socket_connect is called.\n");
 }
 
@@ -765,7 +787,9 @@ static int mqtt_socket_connect( lua_State* L )
   } else {
     secure = 0; // default to 0
   }
+#ifdef CLIENT_SSL_ENABLE
   mud->secure = secure; // save
+#endif
 
   // call back function when a connection is obtained, tcp only
   if ((stack<=top) && (lua_type(L, stack) == LUA_TFUNCTION || lua_type(L, stack) == LUA_TLIGHTFUNCTION)){
@@ -822,16 +846,20 @@ static int mqtt_socket_close( lua_State* L )
 
   // call mqtt_disconnect()
 
+#ifdef CLIENT_SSL_ENABLE
   if(mud->secure){
     if(mud->pesp_conn->proto.tcp->remote_port || mud->pesp_conn->proto.tcp->local_port)
       espconn_secure_disconnect(mud->pesp_conn);
   }
   else
   {
+#endif
     if(mud->pesp_conn->proto.tcp->remote_port || mud->pesp_conn->proto.tcp->local_port)
       espconn_disconnect(mud->pesp_conn);
+#ifdef CLIENT_SSL_ENABLE
   }
-  return 0;  
+#endif
+  return 0;
 }
 
 // Lua: mqtt:on( "method", function() )
@@ -887,7 +915,7 @@ static int mqtt_socket_subscribe( lua_State* L )
   mud = (lmqtt_userdata *)luaL_checkudata(L, stack, "mqtt.socket");
   luaL_argcheck(L, mud, stack, "mqtt.socket expected");
   stack++;
-  
+
   if(mud->send_timeout != 0)
     	return luaL_error( L, "sending in process" );
 
@@ -898,7 +926,7 @@ static int mqtt_socket_subscribe( lua_State* L )
   stack++;
   if(topic == NULL)
     return luaL_error( L, "need topic name" );
-  
+
   qos = luaL_checkinteger( L, stack);
   stack++;
 
@@ -916,11 +944,13 @@ static int mqtt_socket_subscribe( lua_State* L )
     mud->cb_suback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
   }
 
+#ifdef CLIENT_SSL_ENABLE
   if(mud->secure)
     espconn_secure_sent(mud->pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
   else
+#endif
     espconn_sent(mud->pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
-  
+
   return 0;
 }
 
@@ -984,9 +1014,11 @@ static int mqtt_socket_publish( lua_State* L )
     mud->cb_puback_ref = luaL_ref(L, LUA_REGISTRYINDEX);
   }
 
+#ifdef CLIENT_SSL_ENABLE
   if(mud->secure)
     espconn_secure_sent(pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
   else
+#endif
     espconn_sent(pesp_conn, mud->mqtt_state.outbound_message->data, mud->mqtt_state.outbound_message->length);
   mud->mqtt_state.outbound_message = NULL;
   return 0;
@@ -1011,7 +1043,7 @@ static const LUA_REG_TYPE mqtt_socket_map[] =
   { LNILKEY, LNILVAL }
 };
 
-const LUA_REG_TYPE mqtt_map[] = 
+const LUA_REG_TYPE mqtt_map[] =
 {
   { LSTRKEY( "Client" ), LFUNCVAL ( mqtt_socket_client ) },
 #if LUA_OPTIMIZE_MEMORY > 0
@@ -1034,7 +1066,7 @@ LUALIB_API int ICACHE_FLASH_ATTR luaopen_mqtt( lua_State *L )
   lua_pushvalue( L, -1 );
   lua_setmetatable( L, -2 );
 
-  // Module constants  
+  // Module constants
   // MOD_REG_NUMBER( L, "TCP", TCP );
 
   // create metatable
@@ -1047,5 +1079,5 @@ LUALIB_API int ICACHE_FLASH_ATTR luaopen_mqtt( lua_State *L )
   luaL_register( L, NULL, mqtt_socket_map );
 
   return 1;
-#endif // #if LUA_OPTIMIZE_MEMORY > 0  
+#endif // #if LUA_OPTIMIZE_MEMORY > 0
 }
